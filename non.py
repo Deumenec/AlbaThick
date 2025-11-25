@@ -25,9 +25,6 @@ import copy
 
 
 
-
-
-
 def calculate_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     """
     

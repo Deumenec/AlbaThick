@@ -14,10 +14,12 @@ the effect over error
 """
 
 import os
+import numpy as np
 import at
 from scipy.io import loadmat
+import at_utils
 
-os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
+#os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
 #os.chdir('/Users/deumenec/Documents/Uni/9é semestre/ALBA/Teoria/AlbaThick') #Set my working directory!
 
 ###############################################################################
@@ -27,18 +29,46 @@ os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
 ###############################################################################
 
 lattice_file   = 'ring_a2.mat'
-lattice_path   = 'lattices'
+lattice_folder = 'lattices'
 results        = 'results'
-direction      = 'v'
+direction      = 'v' #v: vertical h: horizontal b: both
 step_exp       =  7
 step           =  10**(-step_exp)
 divide         =  10
+read_numerical =  False
 
-file = os.path.join(lattice_path, lattice_file)
 
-ring = at.load_mat(os.path.join(lattice_path, lattice_file), use = "ring")
+lat_path = os.path.join(lattice_folder, lattice_file)
 
-mat = loadmat(file)
-ind_bpm = mat["bpmlist"][0]
-ind_corV= mat["cmlist_v"][0]
-ind_corH= mat["cmlist_h"][0]
+ring = at.load_mat(lat_path, use = "ring")
+mat         = loadmat(lat_path)
+
+ind_bpm     = np.array([i[0]-1 for i in mat["bpmlist"]])
+ind_cor     = { "v": np.array([i[0]-1 for i in mat["cmlist_v"]]), 
+                "h": np.array([i[0]-1 for i in mat["cmlist_h"]])}
+ind_quad    = np.array(at.get_refpts(ring, lambda el: el.FamName.startswith('LIUQ') 
+                                                   or el.FamName.startswith('LIDQ')
+                                                   or  el.FamName.startswith('LQ') 
+                                                   or el.FamName.startswith('MQ') 
+                                                   or el.FamName.startswith('SQ')))
+
+
+
+if read_numerical == False:
+    #I add kick angle variable to perform the numerical ORM calculation
+    sub_direction = "v"
+    for ind in ind_cor[sub_direction]: ring[ind].KickAngle = np.array([0,0])
+    numerical_ORM = at_utils.calc_numerical_dORM_dq(ring, ind_bpm, ind_cor[sub_direction], ind_quad, step, sub_direction)
+    np.save(os.path.join(results,sub_direction+ "_numdORM_dq"),numerical_ORM)
+    
+    sub_direction = "h"
+    for ind in ind_cor[sub_direction]: ring[ind].KickAngle = np.array([0,0])
+    numerical_ORM = at_utils.calc_numerical_dORM_dq(ring, ind_bpm, ind_cor[sub_direction], ind_quad, step, sub_direction)
+    np.save(os.path.join(results,sub_direction+ "_numdORM_dq"),numerical_ORM)
+    
+
+
+
+
+
+

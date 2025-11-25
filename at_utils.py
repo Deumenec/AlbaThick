@@ -99,7 +99,7 @@ def compute_single_quad(ring, quad, ORM, direction, step, ind_bpm, ind_cor):
     return (Resp_local.response - ORM) / step
 
 
-def calculate_num_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, step, direction):
+def calc_numerical_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, step, direction):
     """
     
     Parameters
@@ -129,7 +129,7 @@ def calculate_num_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, step, direction):
     
     return num_dORM_dq
 
-def calculate_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
+def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     """
     
     Parameters
