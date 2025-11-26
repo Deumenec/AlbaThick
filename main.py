@@ -18,6 +18,10 @@ import numpy as np
 import at
 from scipy.io import loadmat
 import at_utils
+import math_utils
+import re #Per les regular expresions
+from matplotlib import rc
+import matplotlib.pyplot as plt
 
 #os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
 #os.chdir('/Users/deumenec/Documents/Uni/9é semestre/ALBA/Teoria/AlbaThick') #Set my working directory!
@@ -31,21 +35,35 @@ import at_utils
 lattice_file   = 'ring_a2.mat'
 lattice_folder = 'lattices'
 results        = 'results'
-direction      = 'v' #v: vertical h: horizontal b: both
+direction      = 'v' #v: vertical h: horizontal
 step_exp       =  7
 step           =  10**(-step_exp)
 divide         =  10
-read_numerical =  False
+read_numerical =  True
+dispersion     =  False
+
+if dispersion  == True:
+    dsname = "d_"
+if dispersion  == False:
+    dsname = "nd_" 
 
 
 lat_path = os.path.join(lattice_folder, lattice_file)
 
 ring = at.load_mat(lat_path, use = "ring")
+
+if dispersion ==False:
+    ring.disable_6d()
+
 mat         = loadmat(lat_path)
 
-ind_bpm     = np.array([i[0]-1 for i in mat["bpmlist"]])
-ind_cor     = { "v": np.array([i[0]-1 for i in mat["cmlist_v"]]), 
-                "h": np.array([i[0]-1 for i in mat["cmlist_h"]])}
+ordsV = re.compile('^COR$|^SH[1-7][1-4]?$|^SV[246]');
+ordsH = re.compile('^COR$|^SV[1-7][1-4]?$');
+
+ind_bpm = at.get_refpts(ring, lambda el: el.FamName.startswith('BPM') and not el.FamName.startswith('BPM_')) #BPMs bons sense l'element nou
+#ind_bpm     = np.array([i[0]-1 for i in mat["bpmlist"]])
+ind_cor     = { "v": at.get_refpts(ring, lambda el: ordsV.search(el.FamName)), 
+                "h": at.get_refpts(ring, lambda el: ordsH.search(el.FamName))}
 ind_quad    = np.array(at.get_refpts(ring, lambda el: el.FamName.startswith('LIUQ') 
                                                    or el.FamName.startswith('LIDQ')
                                                    or  el.FamName.startswith('LQ') 
@@ -53,19 +71,53 @@ ind_quad    = np.array(at.get_refpts(ring, lambda el: el.FamName.startswith('LIU
                                                    or el.FamName.startswith('SQ')))
 
 
-
 if read_numerical == False:
     #I add kick angle variable to perform the numerical ORM calculation
     sub_direction = "v"
     for ind in ind_cor[sub_direction]: ring[ind].KickAngle = np.array([0,0])
     numerical_ORM = at_utils.calc_numerical_dORM_dq(ring, ind_bpm, ind_cor[sub_direction], ind_quad, step, sub_direction)
-    np.save(os.path.join(results,sub_direction+ "_numdORM_dq"),numerical_ORM)
+    np.save(os.path.join(results,dsname + sub_direction+ "_numdORM_dq"),numerical_ORM)
     
     sub_direction = "h"
     for ind in ind_cor[sub_direction]: ring[ind].KickAngle = np.array([0,0])
     numerical_ORM = at_utils.calc_numerical_dORM_dq(ring, ind_bpm, ind_cor[sub_direction], ind_quad, step, sub_direction)
-    np.save(os.path.join(results,sub_direction+ "_numdORM_dq"),numerical_ORM)
+    np.save(os.path.join(results,dsname + sub_direction+ "_numdORM_dq"),numerical_ORM)
     
+    
+dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
+dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
+vquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
+vERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
+
+direction = "h"
+
+dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
+dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
+vquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
+vERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
+#Creating the plot Zeus asked me to:
+   
+quadBetas =np.array([ i[0] for i in (at.get_optics(ring, refpts=ind_quad))[2]["beta"] ])
+
+rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+#rc('text', usetex=True)
+
+fig, axis = plt.subplots(1,2,figsize=(10,5))
+fig.suptitle("Errors along quadrupoles for the thin formula ", fontsize = 20)
+fig.subplots_adjust(top=0.85)
+plt.ylabel('dORM/dq normalized_RMSE \%')
+
+quadBetash =np.array([ i[0] for i in (at.get_optics(ring, refpts=np.array(ind_quad)))[2]["beta"] ])
+quadBetasv =np.array([ i[1] for i in (at.get_optics(ring, refpts=np.array(ind_quad)))[2]["beta"] ])
+
+axis[0].set_xlabel('Quadrupole')
+axis[1].set_xlabel('Quadrupole')
+axis[0].title.set_text("Vertical direction, Total = "+f"{vERROR:.4f}\%")
+axis[0].plot(vquadERROR)
+#axis[0].plot((quadBetasv-3.85)/80+0.10)
+axis[1].title.set_text("Horizontal direction, Total = "+f"{hERROR:.4f}\%" )
+axis[1].plot(hquadERROR)
+#axis[1].plot((quadBetash-3.85)/80+0.10)
 
 
 

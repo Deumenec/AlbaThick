@@ -199,12 +199,6 @@ e_div_num = np.zeros(length-1)
 for i in range(1, length):
     e_div_num[i-1] = useful_functions.normalized_RMSE(dORM_num, calculate_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, i), (0,1,2))
     
-plt.plot(range(1, 50), e_div_num)
-plt.show()
-
-
-
-
 direction = "h"
 
 if (compute_num_dORM == True):
@@ -244,6 +238,4 @@ axis[1].plot(hquadERROR)
 
 plt.savefig("thin_dORM.pdf")
 plt.show()
-quad = 10
-bpm = 10
 
