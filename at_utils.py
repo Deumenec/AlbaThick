@@ -12,6 +12,7 @@ import numpy as np
 import time
 from joblib import Parallel, delayed
 import copy
+import matplotlib.pyplot as plt
 
 def get_beta_segment(ring, interval, num, direction, marks=[]):
     """
@@ -190,8 +191,14 @@ def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     
     #Objerve ho indices correspond like: k-> quadrupole, i->BPM, j-> corrector
     #These are the broadcasting variables used to write the tensor in numpy
+    
+    ##############################################
+    #Averaging optics inside of quads
+    ##############################################
+    
     inQuadBeta0 = np.zeros([len(ind_quad), divide+1])
     inQuadTune0 = np.zeros([len(ind_quad), divide+1])
+    
     
     for i, ind in enumerate(ind_quad):
         segment   = ring[0:0] + ring[ind].divide([1/divide]*(divide+1))
@@ -206,6 +213,26 @@ def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     inQuadBeta = (inQuadBeta0[:,:-1] + inQuadBeta0[:,1:])/2
     inQuadTune = (inQuadTune0[:,:-1] + inQuadTune0[:,1:])/2
     
+    ##############################################
+    #Averaging optics inside of correctors
+    ##############################################
+    divideC = 10
+    inCorBeta0 = np.zeros([len(ind_cor), divideC+1])
+    inCorTune0 = np.zeros([len(ind_cor), divideC+1])
+    
+    for i, ind in enumerate(ind_cor):
+        segment   = ring[0:0] + ring[ind].divide([1/divideC]*(divideC+1))
+        #segment.enable_6d()
+        segOptics = at.physics.linopt6(segment, refpts=range(divideC+1), twiss_in=allOptics[2][ind_dict["cor"][i]])
+        inCorBeta0[i] = [j[dir_ind] for j in segOptics[2]["beta"]]
+        inCorTune0[i] = [j[dir_ind] + corTune[i] for j in segOptics[2]["mu"]]
+    
+    corBeta = np.zeros([len(ind_quad), divideC])
+    corTune = np.zeros([len(ind_quad), divideC])
+    
+    corBeta = np.sum((inCorBeta0[:,:-1] + inCorBeta0[:,1:])/2, axis =1 )/divideC
+    corTune = np.sum((inCorTune0[:,:-1] + inCorTune0[:,1:])/2, axis = 1)/divideC
+    
     bpmBetab = bpmBeta[None, :, None, None]
     corBetab = corBeta[None, None, :, None]
     quadBetab= inQuadBeta[:, None, None, :]
@@ -213,6 +240,13 @@ def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     bpmTuneb = bpmTune[None, :, None, None]
     corTuneb = corTune[None, None, :, None]
     quadTuneb= inQuadTune[:, None, None, :]
+    
+    
+    
+    
+    
+    
+    
     
     print("Auxiliar Optics time = ", time.perf_counter()- start)
     start = time.perf_counter()
@@ -234,7 +268,114 @@ def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     print("Matrix time = ", time.perf_counter()- start)
     return np.sum(ana_dORM_dq, axis = 3)
 
+def calc_av_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
+    """
+    
+    Parameters
+    ----------
+    ring : at.lattice
+        lattice for which the calculation is performed
+    ind_bpm : tuple
+        indices of the bpms
+    ind_cor : tuple
+        indices of the correctors
+    ind_quad : tuple
+        indices of the quadrupoles
+    direction : char 
+        'v' or 'h' the transeverse direction along which the ORM is calculated
 
+    Returns
+    -------
+    The Jacobian of the Orbit response matrix object derivative with respect
+    to the quadrupole strength calculated through Zeus formula.
+    
+    Part of the work is simply to merge the index lists to allow for a single
+    call of the get_optics function providing better efficiency
+    """
+    
+    dir_dict = {"h": 0, "v": 1}
+    dir_ind = dir_dict[direction]
+    sgn = -(-1)**dir_ind # 1 in vertical and -1 in horizontal
+    
+    ind_all  = np.array([[ind, 0] for ind in ind_bpm]
+                       +[[ind, 1] for ind in ind_cor]
+                       +[[ind, 2] for ind in ind_quad])
+    
+    ind_all  = ind_all[np.argsort(ind_all[:,0])]
+    ind_dict = {
+    "bpm":  [i for i, ind in enumerate(ind_all) if ind[1] == 0],
+    "cor":  [i for i, ind in enumerate(ind_all) if ind[1] == 1],
+    "quad": [i for i, ind in enumerate(ind_all) if ind[1] == 2]
+    }
+    
+    ind_all=[ind[0] for ind in ind_all]
+    start = time.perf_counter()
+    
+    allOptics = at.get_optics(ring, refpts=ind_all)
+    
+    print("Time to get all optics=", time.perf_counter()-start)
+    
+    start = time.perf_counter()
+    tune = allOptics[1]["tune"][dir_ind]
+    bpmBeta = np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["bpm"]])
+    bpmTune = np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["bpm"]]) #Important, mu doesn't have the /2pi factor in atcollab!
+    corBeta = np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["cor"]])
+    corTune = np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["cor"]]) 
+    #quadBeta= np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["quad"]])
+    
+    quadLen = np.array([ring[quad].Length for quad in ind_quad])#*(0.9988+dir_ind*0.0017)
+    quadTune= np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["quad"]])
+    
+    #Now we use the lin_opt_6 method to compute the optic functions inside of quadrupoles
+    
+    #Objerve ho indices correspond like: k-> quadrupole, i->BPM, j-> corrector
+    #These are the broadcasting variables used to write the tensor in numpy
+    inQuadBeta0 = np.zeros([len(ind_quad), divide+1])
+    inQuadTune0 = np.zeros([len(ind_quad), divide+1])
+    
+    for i, ind in enumerate(ind_quad):
+        segment   = ring[0:0] + ring[ind].divide([1/divide]*(divide+1))
+        #segment.enable_6d()
+        segOptics = at.physics.linopt6(segment, refpts=range(divide+1), twiss_in=allOptics[2][ind_dict["quad"][i]])
+        inQuadBeta0[i] = [j[dir_ind] for j in segOptics[2]["beta"]]
+        inQuadTune0[i] = [j[dir_ind] + quadTune[i] for j in segOptics[2]["mu"]]
+    
+    inQuadBeta = np.zeros([len(ind_quad), divide])
+    inQuadTune = np.zeros([len(ind_quad), divide])
+    
+    inQuadBeta = (inQuadBeta0[:,:-1] + inQuadBeta0[:,1:])/2
+    inQuadTune = (inQuadTune0[:,:-1] + inQuadTune0[:,1:])/2
+    
+    inQuadBeta = np.sum(inQuadBeta, axis = 1)/divide
+    inQuadTune = np.sum(inQuadTune, axis = 1)/divide
+    
+    bpmBetab = bpmBeta[None, :, None]
+    corBetab = corBeta[None, None, :]
+    quadBetab= inQuadBeta[:, None, None]
+    quadLenb = quadLen[:, None, None]
+    bpmTuneb = bpmTune[None, :, None]
+    corTuneb = corTune[None, None, :]
+    quadTuneb= inQuadTune[:, None, None]
+    
+    print("Auxiliar Optics time = ", time.perf_counter()- start)
+    start = time.perf_counter()
+    Cij1 = np.cos(np.abs(bpmTuneb-corTuneb)-np.pi*tune)
+    Cik2 = np.cos(2*np.abs(bpmTuneb-quadTuneb)-2*np.pi*tune)
+    Cjk2 = np.cos(2*np.abs(corTuneb-quadTuneb)-2*np.pi*tune)
+    Sij1 = np.sign(bpmTuneb-corTuneb)*np.sin(np.abs(bpmTuneb-corTuneb)-np.pi*tune)
+    Sik2 = np.sign(bpmTuneb-quadTuneb)*np.sin(2*np.abs(bpmTuneb-quadTuneb)-2*np.pi*tune)
+    Sjk2 = np.sign(corTuneb-quadTuneb)*np.sin(2*np.abs(corTuneb-quadTuneb)-2*np.pi*tune)
+        
+    cosTerm = Cij1 * ( Cik2 + Cjk2 + 2* np.cos(np.pi * tune)**2)
+    sinTerm = Sij1 * ( Sik2 - Sjk2 + np.sin( 2*np.pi*tune)*(2*np.heaviside(bpmTuneb-quadTuneb, 0)
+                -2*np.heaviside(corTuneb-quadTuneb, 0)-np.sign(bpmTuneb-corTuneb)))
+    
+    ana_dORM_dq = sgn * (
+    np.sqrt(bpmBetab * corBetab) * quadBetab * quadLenb
+    / (8 * np.sin(np.pi * tune)* np.sin(2 * np.pi * tune)) 
+    * (cosTerm + sinTerm))
+    print("Matrix time = ", time.perf_counter()- start)
+    return ana_dORM_dq
 
 
 

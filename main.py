@@ -20,7 +20,7 @@ from scipy.io import loadmat
 import at_utils
 import math_utils
 import re #Per les regular expresions
-from matplotlib import rc
+#from matplotlib import rc
 import matplotlib.pyplot as plt
 
 #os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
@@ -38,7 +38,7 @@ results        = 'results'
 direction      = 'v' #v: vertical h: horizontal
 step_exp       =  7
 step           =  10**(-step_exp)
-divide         =  10
+divide         =  20
 read_numerical =  True
 dispersion     =  False
 
@@ -52,10 +52,10 @@ lat_path = os.path.join(lattice_folder, lattice_file)
 
 ring = at.load_mat(lat_path, use = "ring")
 
-if dispersion ==False:
+if dispersion == False:
     ring.disable_6d()
 
-mat         = loadmat(lat_path)
+
 
 ordsV = re.compile('^COR$|^SH[1-7][1-4]?$|^SV[246]');
 ordsH = re.compile('^COR$|^SV[1-7][1-4]?$');
@@ -84,6 +84,9 @@ if read_numerical == False:
     np.save(os.path.join(results,dsname + sub_direction+ "_numdORM_dq"),numerical_ORM)
     
     
+    
+    
+    
 dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
 dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
 vquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
@@ -93,13 +96,13 @@ direction = "h"
 
 dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
 dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
-vquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
-vERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
+hquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
+hERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
 #Creating the plot Zeus asked me to:
    
 quadBetas =np.array([ i[0] for i in (at.get_optics(ring, refpts=ind_quad))[2]["beta"] ])
 
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+#rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 #rc('text', usetex=True)
 
 fig, axis = plt.subplots(1,2,figsize=(10,5))
