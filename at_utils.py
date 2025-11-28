@@ -241,13 +241,6 @@ def calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
     corTuneb = corTune[None, None, :, None]
     quadTuneb= inQuadTune[:, None, None, :]
     
-    
-    
-    
-    
-    
-    
-    
     print("Auxiliar Optics time = ", time.perf_counter()- start)
     start = time.perf_counter()
     Cij1 = np.cos(np.abs(bpmTuneb-corTuneb)-np.pi*tune)
@@ -377,6 +370,125 @@ def calc_av_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divid
     print("Matrix time = ", time.perf_counter()- start)
     return ana_dORM_dq
 
+def calc_thick_ana_dORM_dq(ring, ind_bpm, ind_cor, ind_quad, direction, divide):
+    """
 
+    Parameters
+    ----------
+    ring : at.lattice
+    lattice for which the calculation is performed
+    ind_bpm : tuple
+    indices of the bpms
+    ind_cor : tuple
+    indices of the correctors
+    ind_quad : tuple
+    indices of the quadrupoles
+    direction : char
+    'v' or 'h' the transeverse direction along which the ORM is calculated
+      
+    Returns
+    -------
+    The Jacobian of the Orbit response matrix object derivative with respect
+    to the quadrupole strength calculated through Zeus formula.
+
+    Part of the work is simply to merge the index lists to allow for a single
+    call of the get_optics function providing better efficiency
+    """
+
+    dir_dict = {"h": 0, "v": 1}
+    dir_ind = dir_dict[direction]
+    sgn = -(-1)**dir_ind # 1 in vertical and -1 in horizontal
+
+    ind_all  = np.array([[ind, 0] for ind in ind_bpm]
+                   +[[ind, 1] for ind in ind_cor]
+                   +[[ind, 2] for ind in ind_quad])
+
+    ind_all  = ind_all[np.argsort(ind_all[:,0])]
+    ind_dict = {
+    "bpm":    [i for i, ind in enumerate(ind_all) if ind[1] == 0],
+    "cor":    [i for i, ind in enumerate(ind_all) if ind[1] == 1],
+    "quad": [i for i, ind in enumerate(ind_all) if ind[1] == 2]
+    }
+
+    ind_all=[ind[0] for ind in ind_all]
+    start = time.perf_counter()
+
+    allOptics = at.get_optics(ring, refpts=ind_all)
+
+    print("Time to get all optics=", time.perf_counter()-start)
+
+    start = time.perf_counter()
+    tune = allOptics[1]["tune"][dir_ind]
+    bpmBeta = np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["bpm"]], dtype= complex )
+    corBeta = np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["cor"]], dtype= complex)
+    quadBeta= np.array([allOptics[2]["beta"][ind][dir_ind] for ind in ind_dict["quad"]], dtype= complex)
+    quadLen = np.array([ring[quad].Length for quad in ind_quad])#*(0.9988+dir_ind*0.0017)
+    quadQ     =-sgn*np.array([ring[quad].PolynomB[1] for quad in ind_quad], dtype= complex)
+    bpmTune = np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["bpm"]]) #Important, mu doesn't have the /2pi factor in atcollab!
+    corTune = np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["cor"]])
+    quadTune= np.array([allOptics[2]["mu"][ind][dir_ind] for ind in ind_dict["quad"]])
+    quadAlpha= np.array([allOptics[2]["alpha"][ind][dir_ind] for ind in ind_dict["quad"]])
+    quadGamma = (1+quadAlpha*quadAlpha)/quadBeta
+    #Now we use the lin_opt_6 method to compute the optic functions inside of quadrupoles
+
+    #Objerve ho indices correspond like: k-> quadrupole, i->BPM, j-> corrector
+    #These are the broadcasting variables used to write the tensor in numpy
+    
+    ##############################################
+    #Averaging optics inside of correctors
+    ##############################################
+    
+    divideC = 10
+    inCorBeta = np.zeros([len(ind_cor), divideC+1])
+    inCorTune = np.zeros([len(ind_cor), divideC+1])
+    
+    for i, ind in enumerate(ind_cor):
+        segment   = ring[0:0] + ring[ind].divide([1/divideC]*(divideC+1))
+        #segment.enable_6d()
+        segOptics = at.physics.linopt6(segment, refpts=range(divideC+1), twiss_in=allOptics[2][ind_dict["cor"][i]])
+        inCorBeta[i] = [j[dir_ind] for j in segOptics[2]["beta"]]
+        inCorTune[i] = [j[dir_ind] + corTune[i] for j in segOptics[2]["mu"]]
+    
+    corBeta = np.average(inCorBeta, axis=1)
+    corTune = np.average(inCorTune, axis=1)
+    
+    ##############################################
+    #Preparing for broadcasting
+    ##############################################
+    
+    bpmBetab = bpmBeta[None, :, None]
+    corBetab = corBeta[None, None, :]
+    quadLenb = quadLen[:, None, None]
+    bpmTuneb = bpmTune[None, :, None]
+    corTuneb = corTune[None, None, :]
+    quadBetab= quadBeta[:, None, None]
+    quadAlphab= quadAlpha[:, None, None]
+    quadGammab= quadGamma[:, None, None]
+    quadTuneb= quadTune[:, None, None]
+    quadQb   = quadQ[:, None, None]
+
+
+    Cij1 = np.cos(np.abs(bpmTuneb-corTuneb)-np.pi*tune)
+    Cik2 = np.cos(2*np.abs(bpmTuneb-quadTuneb)-2*np.pi*tune)
+    Cjk2 = np.cos(2*np.abs(corTuneb-quadTuneb)-2*np.pi*tune)
+    Sij1 = np.sign(bpmTuneb-corTuneb)*np.sin(np.abs(bpmTuneb-corTuneb)-np.pi*tune)
+    Sik2 = np.sign(bpmTuneb-quadTuneb)*np.sin(2*np.abs(bpmTuneb-quadTuneb)-2*np.pi*tune)
+    Sjk2 = np.sign(corTuneb-quadTuneb)*np.sin(2*np.abs(corTuneb-quadTuneb)-2*np.pi*tune)
+#Terms for the thick element formula        
+    Ik0    = (quadBetab+quadGammab/quadQb)*quadLenb/2+ (quadBetab-quadGammab/quadQb)*(np.sin(2*np.sqrt(quadQb)*quadLenb))/(4*np.sqrt(quadQb))+quadAlphab/(2*quadQb)*(np.cos(2*np.sqrt(quadQb)*quadLenb)-1)
+    Iks2 = 1/(2*quadQb)*(1-np.cos(2*np.sqrt(quadQb)*quadLenb)+quadAlphab/(quadBetab)*(np.sin(2*np.sqrt(quadQb)*quadLenb)/np.sqrt(quadQb)-2*quadLenb))
+    Ikc2 = Ik0 + (np.sin(2*np.sqrt(quadQb)*quadLenb)/(2*np.sqrt(quadQb))-quadLenb)/(quadQb*quadBetab)
+    SSik2= Ikc2*Sik2-Iks2*Cik2
+    SSjk2= Ikc2*Sjk2-Iks2*Cjk2
+    CCik2= Ikc2*Cik2+Iks2*Sik2
+    CCjk2= Ikc2*Cjk2+Iks2*Sjk2
+
+    cosTerm = Cij1 * ( CCik2 + CCjk2 + 2*Ik0 *np.cos(np.pi * tune)**2)
+    sinTerm = Sij1 * ( SSik2 - SSjk2 + Ik0*np.sin(2*np.pi*tune)*(2*np.heaviside(bpmTuneb-quadTuneb, 0)
+        -2*np.heaviside(corTuneb-quadTuneb, 0)-np.sign(bpmTuneb-corTuneb)))
+    ana_dORM_dq = sgn * ( np.sqrt(bpmBetab * corBetab) 
+     / (8 * np.sin(np.pi * tune)* np.sin(2 * np.pi * tune)) 
+     * (cosTerm + sinTerm))
+    return np.real(ana_dORM_dq)
 
 

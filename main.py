@@ -16,12 +16,10 @@ the effect over error
 import os
 import numpy as np
 import at
-from scipy.io import loadmat
-import at_utils
-import math_utils
 import re #Per les regular expresions
-#from matplotlib import rc
-import matplotlib.pyplot as plt
+
+import at_utils
+import plot_utils
 
 #os.chdir('Z:\Projectes\AlbaThick') #Set my working directory!
 #os.chdir('/Users/deumenec/Documents/Uni/9é semestre/ALBA/Teoria/AlbaThick') #Set my working directory!
@@ -38,7 +36,7 @@ results        = 'results'
 direction      = 'v' #v: vertical h: horizontal
 step_exp       =  7
 step           =  10**(-step_exp)
-divide         =  20
+divide         =  10
 read_numerical =  True
 dispersion     =  False
 
@@ -83,46 +81,17 @@ if read_numerical == False:
     numerical_ORM = at_utils.calc_numerical_dORM_dq(ring, ind_bpm, ind_cor[sub_direction], ind_quad, step, sub_direction)
     np.save(os.path.join(results,dsname + sub_direction+ "_numdORM_dq"),numerical_ORM)
     
-    
-    
-    
-    
-dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
-dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
-vquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
-vERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
-
-direction = "h"
-
-dORM = np.load(os.path.join(results,dsname + direction+ "_numdORM_dq.npy"))
-dORM_numpy = at_utils.calc_numpy_ana_dORM_dq(ring, ind_bpm, ind_cor[direction], ind_quad, direction, divide)
-hquadERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (1,2))
-hERROR = math_utils.normalized_RMSE(dORM, dORM_numpy, (0,1,2))
-#Creating the plot Zeus asked me to:
-   
-quadBetas =np.array([ i[0] for i in (at.get_optics(ring, refpts=ind_quad))[2]["beta"] ])
-
-#rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-#rc('text', usetex=True)
-
-fig, axis = plt.subplots(1,2,figsize=(10,5))
-fig.suptitle("Errors along quadrupoles for the thin formula ", fontsize = 20)
-fig.subplots_adjust(top=0.85)
-plt.ylabel('dORM/dq normalized_RMSE \%')
-
-quadBetash =np.array([ i[0] for i in (at.get_optics(ring, refpts=np.array(ind_quad)))[2]["beta"] ])
-quadBetasv =np.array([ i[1] for i in (at.get_optics(ring, refpts=np.array(ind_quad)))[2]["beta"] ])
-
-axis[0].set_xlabel('Quadrupole')
-axis[1].set_xlabel('Quadrupole')
-axis[0].title.set_text("Vertical direction, Total = "+f"{vERROR:.4f}\%")
-axis[0].plot(vquadERROR)
-#axis[0].plot((quadBetasv-3.85)/80+0.10)
-axis[1].title.set_text("Horizontal direction, Total = "+f"{hERROR:.4f}\%" )
-axis[1].plot(hquadERROR)
-#axis[1].plot((quadBetash-3.85)/80+0.10)
 
 
+dORMV = np.load(os.path.join(results,dsname + "v_numdORM_dq.npy"))
+dORM_numV = at_utils.calc_thick_ana_dORM_dq(ring, ind_bpm, ind_cor["v"], ind_quad, "v", divide)
+
+dORMH = np.load(os.path.join(results,dsname + "h_numdORM_dq.npy"))
+dORM_numH = at_utils.calc_thick_ana_dORM_dq(ring, ind_bpm, ind_cor["h"], ind_quad, "h", divide)
+
+plot_utils.plot_both(dORMV, dORMH, dORM_numV, dORM_numH)
+
+at.plot_beta
 
 
 
